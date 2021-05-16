@@ -1,0 +1,33 @@
+---
+- name: Install ARME Odoo with PostgreSQL on Docker
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: no
+  vars:
+    volumes:
+    - odoo-db-data
+    - odoo-db-backup
+    - odoo-extra-addons
+    - odoo-var-lib-data
+    containers:
+    - odoo 
+    - db
+  
+  tasks:
+
+  - name: Remove Containers odoo and db
+    docker_container:
+      name: "{{ item }}"
+      state: absent
+    loop: "{{ containers }}"
+    tags: del_containers
+
+  - name: Delete volumes for PostgreSQL and Odoo
+    docker_volume:
+      name: "{{ item }}"
+      state: absent
+    loop: "{{ volumes }}"
+    tags: del_volumes
+  
+

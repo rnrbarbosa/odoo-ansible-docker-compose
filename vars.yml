@@ -1,0 +1,9 @@
+unix_user: "odoo"
+
+odoo_version: "11"
+pg_version: "9.5-alpine"
+pg_db: "example"
+pg_user: "example_user" 
+pg_pass: "example_pass"
+
+

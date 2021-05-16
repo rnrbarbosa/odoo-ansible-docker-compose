@@ -1,0 +1,130 @@
+---
+- name: Install AME Odoo with PostgreSQL on Docker
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: no
+  vars:
+    - volumes:
+      - odoo-db-data
+      - odoo-db-backup
+      - odoo-var-lib-data
+      - odoo-extra-addons
+    - unix_user: "odoo"
+    - odoo_version: 11
+    - pg_version: "9.5-alpine"
+    - pg_db: "example"
+    - pg_user: "example_user" 
+    - pg_pass: "example_pass"
+  tasks:
+    #################################################
+    # Server Pre-Tasks
+    #################################################
+    - name: Create Directory Structure
+      file:
+        path: "{{ item }}"
+      state: directory
+      owner: "{{ unix_user }}"
+      loop:
+        - /app/odoo
+        - /add/db
+
+      #################################################
+      # Create Container Volumes
+      #################################################
+    - name: Create volumes for PostgreSQL and Odoo
+      docker_volume:
+        name: "{{ item }}"
+      loop: "{{ volumes }}"
+      tags: volumes
+        #################################################
+        # POSTGRESQL TASKS
+        #################################################
+    - name: Create database Container
+      docker_container:
+        name: db
+      image: "postgres:{{ pg_version }}"
+      state: 'started'
+      volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+      - odoo-db-backup:/mnt/backup
+      env:
+        POSTGRES_DB: "{{ pg_db }}"
+        POSTGRES_USER: "{{ pg_user }}"
+        POSTGRES_PASSWORD: "{{ pg_pass }}"
+      register: db_cont_metadata
+
+    - name: Wait for postgres to accept connections
+      wait_for:
+        host: '{{ db_cont_metadata["ansible_facts"]["docker_container"]["NetworkSettings"]["IPAddress"] }}'
+      port: 5432
+      state: drained
+      connect_timeout: 1
+      timeout: 30
+      register: postgres_running
+      until: postgres_running is success
+      retries: 10
+
+        #################################################
+        # Odoo Container tasks
+        #################################################
+    - name: Create Odoo Container
+      docker_container:
+        state: 'started'
+        recreate: yes
+        name: 'odoo'
+        image: "odoo:{{ odoo_version }}"
+        ports:
+          - 8069:8069
+        env:
+          HOST: 'db'
+          USER: "{{ pg_user }}"
+          PASSWORD: "{{ pg_pass }}"
+        links:
+          - 'db'
+        volumes:
+          - "odoo-extra-addons:/mnt/extra-addons"
+          - "odoo-var-lib-data:/var/lib/odoo"
+        #- "/app/odoo/addons:/mnt/extra-addons"
+
+
+    - name: Install python modules on Docker Odoo Container
+      command: docker exec -u root odoo python3 -m pip install {{ item }}
+      loop:
+        - xlsxwriter
+
+
+    - name: Wait for Odoo to accept connections
+      wait_for:
+        host: 0.0.0.0
+        port: 8069
+        state: drained
+        connect_timeout: 1
+        timeout: 60
+      register: odoo_running
+      until: odoo_running is success
+      retries: 10
+
+    - name: Open Odoo and force to create filestore directory
+      uri:
+        url: http://0.0.0.0:8069
+      status_code: 200
+      return_content: yes
+      timeout: 100
+      register: this
+        #  failed_when: "'ARME' not in this.content"
+
+    - name: Restore Old Instance
+      command: "{{item}}"
+      loop:
+        - docker cp /app/odoo/addons/. odoo:/mnt/extra-addons/
+        - docker cp /app/odoo/data/filestore/arme_prod/. odoo:/var/lib/odoo/filestore/arme_prod/
+        - docker cp /var/tmp/arme.pgdump db:/mnt/backup/
+        - docker exec -u root -it odoo chown -R odoo:odoo /var/lib/odoo/filestore
+        - docker stop odoo
+        - docker exec -u postgres db psql -U arme arme_prod -f /mnt/backup/arme.pgdump
+        - docker start odoo
+      tags:
+        - never
+        - restore_instance
+          ...

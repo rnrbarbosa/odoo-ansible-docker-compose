@@ -1,0 +1,22 @@
+---
+- name: Install AME Odoo with PostgreSQL on Docker
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: no
+  tasks:
+    - name: Restore Old Instance from backup of files and postgres dump
+      command: "{{item}}"
+      loop:
+        - "docker cp /app/odoo/addons/. odoo:/mnt/extra-addons/"
+        - "docker cp /app/odoo/data/filestore/example/. odoo:/var/lib/odoo/filestore/example/"
+        - "docker cp /var/tmp/example.pgdump db:/mnt/backup/"
+        - "docker exec -u root -it odoo chown -R odoo:odoo /var/lib/odoo/filestore"
+        - "docker stop odoo"
+        - "docker exec -u postgres db psql -U {{ unix_user }} example -f /mnt/backup/example.pgdump"
+        - "docker start odoo"
+      tags:
+        - recover
+        - never
+        - restore_instance
+...

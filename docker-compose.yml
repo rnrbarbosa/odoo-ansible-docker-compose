@@ -1,0 +1,29 @@
+version: '2'
+services:
+  odoo:
+    image: odoo:11
+    restart: always
+    container_name: odoo2
+    ports:
+      - 18069:8069
+    environment:
+    - HOST=db
+    - USER=arme
+    - PASSWORD=7s2r21pOO5E
+    volumes:
+      - "/app/odoo/addons:/mnt/extra-addons"
+      - "/app/odoo/data:/var/lib/odoo"
+  db:
+    image: 'postgres:9.5-alpine'
+    container_name: db2
+    volumes:
+    - odoo-db-data:/var/lib/postgresql/data
+    - odoo-db-backup:/mnt/backup
+    environment:
+      POSTGRES_DB: 'arme_prod'
+      POSTGRES_USER: 'arme'
+      POSTGRES_PASSWORD: '7s2r21pOO5E'
+volumes:
+  odoo-db-backup:
+  odoo-db-data:
+
